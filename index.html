@@ -1,0 +1,968 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JSON → Interactive Card Grid</title>
+
+  <style>
+    :root{ color-scheme: dark; }
+    html, body{ height:100%; }
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      background: #0b0c10;
+      color: #e9edf1;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    .topbar{
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 7;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: rgba(0,0,0,0.55);
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+      backdrop-filter: blur(6px);
+    }
+    .topbar .left{ display:flex; gap:10px; align-items:center; }
+    .pill{
+      font-size: 12px;
+      border: 1px solid rgba(255,255,255,0.22);
+      background: rgba(255,255,255,0.06);
+      border-radius: 999px;
+      padding: 6px 10px;
+      opacity: 0.9;
+      white-space: nowrap;
+    }
+    .warn{
+      border-color: rgba(255,120,120,0.35);
+      background: rgba(255,120,120,0.09);
+    }
+
+    /* Collection header (always visible above cards; reused as visual language) */
+    .collection-header{
+      position: fixed;
+      top: 44px;
+      left: 0;
+      right: 0;
+      z-index: 6;
+      text-align: center;
+      padding: 14px 16px 10px;
+      pointer-events: none;
+    }
+    .collection-header h1{
+      margin: 0;
+      font-size: 1.35em;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+    }
+    .collection-header p{
+      margin: 4px 0 0;
+      font-size: 0.9em;
+      opacity: 0.8;
+    }
+
+    /* App sizing */
+    .card-app{
+      width: min(1200px, 96vw);
+      margin: 0 auto;
+      position: relative;
+      padding: 120px 16px 24px; /* topbar + collection header */
+    }
+
+    .card-grid{
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+    }
+
+    /* Responsive columns */
+    @media (max-width: 1000px) { .card-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 750px) { .card-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 480px) { .card-grid { grid-template-columns: 1fr; } }
+
+    .card{
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.06);
+      border-radius: 16px;
+      padding: 14px;
+      text-align: left;
+      cursor: pointer;
+      transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+      color: inherit;
+      min-height: 90px; /* fits ~2 lines title + 2 lines subtitle */
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .card-header{
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .card-order{
+      font-size: 1.5em;
+      font-weight: 700;
+      line-height: 1;
+      color: rgba(255, 160, 60, 0.55);
+      flex-shrink: 0;
+    }
+    .card:hover{ transform: translateY(-2px); background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.35); }
+    .card:focus{ outline: 2px solid rgba(255,255,255,0.55); outline-offset: 2px; }
+    .card.section{ background: rgba(70,120,200,0.22); border-color: rgba(100,150,220,0.5); }
+    .card.section:hover{ background: rgba(70,120,200,0.30); border-color: rgba(100,150,220,0.65); }
+
+    .card-title{
+      font-size: 1.05em;
+      font-weight: 700;
+      line-height: 1.2;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .card-subtitle{
+      opacity: 0.8;
+      font-size: 0.78em;
+      line-height: 1.25;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* Detail overlay */
+    .detail{
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: rgba(0,0,0,0.55);
+      padding: 14px;
+      z-index: 10;
+    }
+    .detail-shell{
+      width: 100%;
+      height: calc(100% - 20px);
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.22);
+      background: rgba(20,20,20,0.92);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transform-origin: center;
+      animation: popIn 140ms ease-out;
+    }
+    @keyframes popIn{
+      from{ transform: scale(0.985); opacity:0.6; }
+      to{ transform: scale(1); opacity:1; }
+    }
+
+    .detail-header{
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+    .detail-title{ font-size: 1.25em; font-weight: 800; line-height: 1.05; }
+    .detail-subtitle{ opacity: 0.8; font-size: 0.85em; margin-top: 4px; }
+    .detail-body{
+      padding: 16px;
+      overflow: auto;
+      font-size: 0.95em;
+      line-height: 1.35;
+    }
+
+    .detail-actions{ display:flex; gap:10px; align-items:center; }
+    .ghost{
+      border: 1px solid rgba(255,255,255,0.22);
+      background: rgba(255,255,255,0.06);
+      color: inherit;
+      border-radius: 999px;
+      padding: 8px 12px;
+      cursor: pointer;
+      transition: background 120ms ease, border-color 120ms ease;
+      font-size: 0.85em;
+      user-select: none;
+    }
+    .ghost:hover{ background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.35); }
+    .ghost:focus{ outline: 2px solid rgba(255,255,255,0.55); outline-offset: 2px; }
+
+    /* Iframe overlay */
+    .iframe-overlay{
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.72);
+      padding: 18px;
+      display: grid;
+      place-items: center;
+      z-index: 20;
+    }
+    .iframe-shell{
+      width: 100%;
+      height: calc(100% - 20px);
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.22);
+      background: rgba(10,10,10,0.95);
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      animation: popIn 140ms ease-out;
+    }
+    .iframe-bar{
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+      display:flex;
+      gap: 10px;
+      align-items:center;
+      justify-content: space-between;
+    }
+    .iframe-label{
+      font-size: 0.8em;
+      opacity: 0.8;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 75%;
+    }
+    .iframe{
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: white;
+    }
+    .iframe-missing{ padding: 16px; }
+    .tiny{ font-size: 0.85em; opacity: 0.75; }
+
+    /* Content inside detail-body */
+    .detail-body a{ color: #9ad3ff; }
+    .detail-body code{ background: rgba(255,255,255,0.08); padding: 0.1em 0.25em; border-radius: 6px; }
+    .detail-body img{ max-width: 100%; height: auto; border-radius: 8px; margin: 0.5em 0; }
+
+    /* Tabs UI */
+    .tabs-bar{
+      display: flex;
+      gap: 4px;
+      padding: 8px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+      overflow-x: auto;
+      flex-shrink: 0;
+    }
+    .tab-btn{
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.04);
+      color: inherit;
+      border-radius: 8px;
+      padding: 8px 14px;
+      cursor: pointer;
+      transition: background 120ms ease, border-color 120ms ease;
+      font-size: 0.85em;
+      white-space: nowrap;
+      opacity: 0.7;
+    }
+    .tab-btn:hover{
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.25);
+      opacity: 0.9;
+    }
+    .tab-btn.active{
+      background: rgba(255,255,255,0.12);
+      border-color: rgba(255,255,255,0.35);
+      opacity: 1;
+    }
+    .tab-content{
+      flex: 1;
+      overflow: auto;
+      padding: 16px;
+      background: white;
+      color: #1a1a1a;
+    }
+    .tab-content.iframe-tab{
+      padding: 0;
+    }
+    .tab-content.iframe-tab iframe{
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: white;
+    }
+    /* Style iframes in markdown content */
+    .tab-content iframe{
+      border: none;
+      display: block;
+      margin: 0 auto;
+      max-width: 100%;
+    }
+
+    /* Course selection menu */
+    .course-menu{
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .course-menu h1{
+      font-size: 1.5em;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .course-menu p{
+      opacity: 0.7;
+      margin-bottom: 24px;
+    }
+    .course-menu-list{
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .course-menu-item{
+      display: block;
+      padding: 16px 20px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 12px;
+      text-decoration: none;
+      color: inherit;
+      transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+    }
+    .course-menu-item:hover{
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.35);
+      transform: translateX(4px);
+    }
+    .course-menu-item-title{
+      font-size: 1.1em;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .course-menu-item-subtitle{
+      font-size: 0.85em;
+      opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar" role="status" aria-live="polite">
+    <div class="left">
+      <a href="./" class="pill" id="backLink" style="text-decoration:none; cursor:pointer;" hidden>← Courses</a>
+      <div class="pill" id="dataPill">Data: …</div>
+      <div class="pill" id="countPill">Cards: …</div>
+    </div>
+    <div class="pill" id="keysHint" title="Keys: click card to open · X/Esc close · →/← cards · ↑/↓ tabs · 1-9 jump to tab · B back">Keys: X · ←/→ · ↑/↓ · B</div>
+  </div>
+
+  <header class="collection-header" id="collectionHeader" hidden>
+    <h1 id="collectionTitle"></h1>
+    <p id="collectionSubtitle"></p>
+  </header>
+
+  <div id="cardApp" class="card-app" aria-label="Card grid"></div>
+
+  <!-- Fallback inline JSON if ES module import fails (optional) -->
+  <script type="application/json" id="cardData">
+  [
+    {
+      "id": "sample-1",
+      "title": "Sample Card",
+      "subtitle": "Loaded from inline JSON (fallback)",
+      "pageContentHtml": "<p>This is fallback data. To load a module, run a local server and use <code>?file=hcd2169</code>.</p>",
+      "moreUrl": ""
+    }
+  ]
+  </script>
+
+  <!-- Marked.js for client-side markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <script type="module">
+    /**
+     * Data loading
+     * - Use URL param: ?file=hcd2169  (NO .js extension required)
+     * - Default: sample
+     * - Expects module to export: export const cardsData = [...]
+     *   and optionally: export const collectionTitle/collectionSubtitle
+     *
+     * IMPORTANT: dynamic import requires serving over http(s). If you open this file via file://,
+     * many browsers will block module imports. Use a local server.
+     */
+
+    const app = document.getElementById('cardApp');
+    const dataPill = document.getElementById('dataPill');
+    const countPill = document.getElementById('countPill');
+
+    const headerEl = document.getElementById('collectionHeader');
+    const titleEl = document.getElementById('collectionTitle');
+    const subtitleEl = document.getElementById('collectionSubtitle');
+
+    const meta = {
+      collectionTitle: '',
+      collectionSubtitle: ''
+    };
+
+    const state = {
+      items: [],
+      openIndex: null,
+      activeTab: 0,
+      lastFocusedCard: null
+    };
+
+    function setPills(sourceLabel){
+      dataPill.textContent = `Data: ${sourceLabel}`;
+      countPill.textContent = `Cards: ${state.items.length}`;
+    }
+
+    function markWarning(msg){
+      dataPill.classList.add('warn');
+      dataPill.textContent = `Data: ${msg}`;
+    }
+
+    function setCollectionMeta(title, subtitle){
+      meta.collectionTitle = String(title ?? '').trim();
+      meta.collectionSubtitle = String(subtitle ?? '').trim();
+
+      if (meta.collectionTitle || meta.collectionSubtitle){
+        titleEl.textContent = meta.collectionTitle;
+        subtitleEl.textContent = meta.collectionSubtitle;
+        headerEl.hidden = false;
+      } else {
+        headerEl.hidden = true;
+      }
+
+      document.title = meta.collectionTitle
+        ? `${meta.collectionTitle} · Card Grid`
+        : 'JSON → Interactive Card Grid';
+    }
+
+    function clampIndex(i){
+      const n = state.items.length;
+      if (!n) return null;
+      return (i % n + n) % n;
+    }
+
+    function gridSpec(n){
+      if (n <= 1) return [1, 1];
+      if (n <= 2) return [2, 1];
+      if (n <= 4) return [2, 2];
+      if (n <= 6) return [3, 2];
+      if (n <= 8) return [4, 2];
+      if (n === 9) return [3, 3];
+      if (n <= 12) return [4, 3];
+      return [4, 4];
+    }
+
+    function el(tag, attrs={}, children=[]){
+      const node = document.createElement(tag);
+      for (const [k,v] of Object.entries(attrs)){
+        if (k === 'class') node.className = v;
+        else if (k === 'html') node.innerHTML = v;
+        else if (k.startsWith('on') && typeof v === 'function') {
+          node.addEventListener(k.slice(2).toLowerCase(), v);
+        }
+        else node.setAttribute(k, v);
+      }
+      for (const c of children) node.appendChild(c);
+      return node;
+    }
+
+    function escapeHtml(s){
+      return String(s ?? '')
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;')
+        .replace(/'/g,'&#039;');
+    }
+
+    function stop(e){ e.preventDefault(); e.stopPropagation(); }
+
+    function toRoman(num) {
+      const vals = [1000,900,500,400,100,90,50,40,10,9,5,4,1];
+      const syms = ['M','CM','D','CD','C','XC','L','XL','X','IX','V','IV','I'];
+      let result = '';
+      for (let i = 0; i < vals.length; i++) {
+        while (num >= vals[i]) {
+          result += syms[i];
+          num -= vals[i];
+        }
+      }
+      return result;
+    }
+
+    // Convert YouTube URLs to embed format
+    function toYouTubeEmbed(url) {
+      if (!url) return url;
+
+      // Already an embed URL
+      if (url.includes('youtube.com/embed/')) return url;
+
+      // Handle youtu.be/VIDEO_ID
+      const shortMatch = url.match(/youtu\.be\/([a-zA-Z0-9_-]+)/);
+      if (shortMatch) {
+        return `https://www.youtube.com/embed/${shortMatch[1]}`;
+      }
+
+      // Handle youtube.com/watch?v=VIDEO_ID
+      const watchMatch = url.match(/youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/);
+      if (watchMatch) {
+        return `https://www.youtube.com/embed/${watchMatch[1]}`;
+      }
+
+      return url;
+    }
+
+    // Returns a safe absolute URL string, or null if missing/invalid/blocked.
+    function sanitizeMoreUrl(raw){
+      const s = String(raw ?? '').trim();
+      if (!s) return null;
+
+      const lowered = s.toLowerCase();
+      if (lowered.startsWith('javascript:')) return null;
+      if (lowered.startsWith('data:')) return null;
+
+      try {
+        const u = new URL(s, window.location.href);
+        if (u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'file:') {
+          return u.href;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    }
+
+    function render(){
+      app.innerHTML = '';
+
+      const grid = el('div', {
+        class: 'card-grid'
+      });
+
+      let sectionCount = 0;
+      let sessionCount = 0;
+
+      state.items.forEach((item, idx) => {
+        const isSection = item.type === 'section';
+        let displayNum;
+
+        if (isSection) {
+          sectionCount++;
+          displayNum = toRoman(sectionCount);
+        } else {
+          sessionCount++;
+          displayNum = String(sessionCount);
+        }
+
+        const cardClass = isSection ? 'card section' : 'card';
+        const card = el('button', {
+          class: cardClass,
+          type: 'button',
+          'data-idx': String(idx),
+          'aria-label': `${item.title}: ${item.subtitle}`,
+          onClick: () => openDetail(idx)
+        }, [
+          el('div', { class: 'card-header' }, [
+            el('div', { class: 'card-order', html: escapeHtml(displayNum) }),
+            el('div', { class: 'card-title', html: escapeHtml(item.title) })
+          ]),
+          el('div', { class: 'card-subtitle', html: escapeHtml(item.subtitle || '') })
+        ]);
+
+        grid.appendChild(card);
+      });
+
+      app.appendChild(grid);
+
+      // Detail overlay
+      if (state.openIndex !== null){
+        const item = state.items[state.openIndex];
+        const tabs = item.tabs || [];
+        const activeTabIndex = Math.min(state.activeTab, tabs.length - 1);
+        const activeTab = tabs[activeTabIndex] || {};
+
+        // Build tab buttons
+        const tabButtons = tabs.map((tab, i) =>
+          el('button', {
+            class: i === activeTabIndex ? 'tab-btn active' : 'tab-btn',
+            type: 'button',
+            onClick: (e) => { stop(e); setActiveTab(i); }
+          }, [document.createTextNode(tab.label || `Tab ${i + 1}`)])
+        );
+
+        // Build tab content
+        let tabContent;
+        if (activeTab.type === 'iframe') {
+          const safeUrl = sanitizeMoreUrl(toYouTubeEmbed(activeTab.url));
+          if (safeUrl) {
+            const iframe = document.createElement('iframe');
+            iframe.src = safeUrl;
+            iframe.title = activeTab.label || 'Content';
+            iframe.loading = 'lazy';
+            // YouTube-friendly attributes
+            if (safeUrl.includes('youtube.com/embed/')) {
+              iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+              iframe.allowFullscreen = true;
+            } else {
+              iframe.referrerPolicy = 'no-referrer';
+            }
+            tabContent = el('div', { class: 'tab-content iframe-tab' }, [iframe]);
+          } else {
+            tabContent = el('div', { class: 'tab-content' }, [
+              el('p', {}, [document.createTextNode('Invalid or missing URL for this tab.')])
+            ]);
+          }
+        } else {
+          // Markdown content - render with marked.js
+          let html = activeTab.html || '';
+          if (!html && activeTab.content) {
+            try {
+              html = marked.parse(activeTab.content);
+            } catch (e) {
+              html = `<p>Error rendering markdown: ${escapeHtml(e.message)}</p>`;
+            }
+          }
+          tabContent = el('div', { class: 'tab-content detail-body', html: html });
+        }
+
+        const detail = el('div', { class: 'detail', role:'dialog', 'aria-modal':'true' }, [
+          el('div', { class: 'detail-shell' }, [
+            // collection header (inside overlay)
+            el('div', { class: 'detail-header' }, [
+              el('div', { class: 'detail-titles' }, [
+                el('div', { class: 'detail-title', html: escapeHtml(meta.collectionTitle || '') }),
+                el('div', { class: 'detail-subtitle', html: escapeHtml(meta.collectionSubtitle || '') })
+              ]),
+              el('div', { class: 'detail-actions' }, [
+                el('button', { class:'ghost', type:'button', onClick: (e) => { stop(e); closeDetail(); } }, [
+                  document.createTextNode('Close ↑')
+                ])
+              ])
+            ]),
+            // card header
+            el('div', { class: 'detail-header' }, [
+              el('div', { class: 'detail-titles' }, [
+                el('div', { class: 'detail-title', html: escapeHtml(item.title) }),
+                el('div', { class: 'detail-subtitle', html: escapeHtml(item.subtitle || '') })
+              ]),
+              el('div', { class: 'detail-actions' }, [
+                el('button', { class:'ghost', type:'button', onClick: (e) => { stop(e); closeDetail(); } }, [
+                  document.createTextNode('Close ↑')
+                ])
+              ])
+            ]),
+            // tabs bar (only show if more than 1 tab)
+            tabs.length > 1
+              ? el('div', { class: 'tabs-bar' }, tabButtons)
+              : null,
+            // tab content
+            tabContent
+          ].filter(Boolean))
+        ]);
+
+        // click outside shell closes
+        detail.addEventListener('click', (e) => {
+          if (e.target === detail) closeDetail();
+        });
+
+        app.appendChild(detail);
+
+        requestAnimationFrame(() => {
+          const closeBtn = detail.querySelector('.detail-actions button:last-child');
+          closeBtn?.focus();
+        });
+      }
+
+    }
+
+    function openDetail(idx){
+      state.lastFocusedCard = document.querySelector(`.card[data-idx="${idx}"]`);
+      state.openIndex = clampIndex(idx);
+      state.activeTab = 0;
+      render();
+    }
+
+    function closeDetail(){
+      state.openIndex = null;
+      state.activeTab = 0;
+      render();
+      requestAnimationFrame(() => state.lastFocusedCard?.focus());
+    }
+
+    function nextCard(delta=+1){
+      if (state.openIndex === null) return;
+      state.openIndex = clampIndex(state.openIndex + delta);
+      state.activeTab = 0;
+      render();
+    }
+
+    function setActiveTab(idx){
+      state.activeTab = idx;
+      render();
+    }
+
+    function nextTab(delta=+1){
+      if (state.openIndex === null) return;
+      const item = state.items[state.openIndex];
+      const numTabs = item.tabs?.length || 1;
+      state.activeTab = ((state.activeTab + delta) % numTabs + numTabs) % numTabs;
+      render();
+    }
+
+    // Keyboard controls
+    window.addEventListener('keydown', (e) => {
+      const key = e.key;
+
+      // Back to course menu (works anytime when viewing a course)
+      if (key === 'b' || key === 'B') {
+        if (state.openIndex === null) {
+          // Only navigate back if we're viewing a course (not already on menu)
+          const params = new URLSearchParams(window.location.search);
+          if (params.get('file')) {
+            window.location.href = './';
+          }
+        }
+        return;
+      }
+
+      if (state.openIndex === null) return;
+
+      // Close
+      if (key === 'x' || key === 'X' || key === 'Escape'){
+        stop(e);
+        closeDetail();
+        return;
+      }
+
+      // Navigate cards
+      if (key === 'ArrowRight'){
+        stop(e);
+        nextCard(+1);
+        return;
+      }
+      if (key === 'ArrowLeft'){
+        stop(e);
+        nextCard(-1);
+        return;
+      }
+
+      // Navigate tabs
+      if (key === 'ArrowDown'){
+        stop(e);
+        nextTab(+1);
+        return;
+      }
+      if (key === 'ArrowUp'){
+        stop(e);
+        nextTab(-1);
+        return;
+      }
+
+      // Number keys 1-9 for direct tab selection
+      if (key >= '1' && key <= '9') {
+        const tabIndex = parseInt(key) - 1;
+        const item = state.items[state.openIndex];
+        if (item.tabs && tabIndex < item.tabs.length) {
+          stop(e);
+          setActiveTab(tabIndex);
+        }
+      }
+    });
+
+    // -------- Module loading --------
+    function coerceModuleName(raw){
+      const s = String(raw ?? '').trim();
+      if (!s) return 'sample';
+
+      // Do not require .js in the URL parameter
+      const name = s.endsWith('.js') ? s.slice(0, -3) : s;
+
+      // Safety: restrict to relative module names (letters, numbers, _, -, /)
+      if (!/^[a-zA-Z0-9_\/-]+$/.test(name)) return 'sample';
+      if (name.startsWith('/')) return 'sample';
+      if (name.includes('..')) return 'sample';
+
+      return name;
+    }
+
+    async function loadCardsData(){
+      const params = new URLSearchParams(window.location.search);
+      const fileParam = params.get('file');
+      const moduleName = coerceModuleName(fileParam);
+      const modulePath = `./${moduleName}.js`;
+
+      // Default label (may change if import fails)
+      dataPill.textContent = `Data: ${moduleName}`;
+
+      try {
+        const mod = await import(modulePath);
+        const data = mod.cardsData ?? mod.default;
+        if (!Array.isArray(data)) throw new Error('Module did not export cardsData array');
+
+        const title = mod.collectionTitle ?? '';
+        const subtitle = mod.collectionSubtitle ?? '';
+
+        return { data, source: moduleName, title, subtitle };
+      } catch (err) {
+        console.warn('[CardApp] module import failed; falling back to inline JSON', err);
+        markWarning(`fallback (module '${moduleName}' failed)`);
+
+        const script = document.getElementById('cardData');
+        const fallbackRaw = script?.textContent?.trim();
+        if (!fallbackRaw) throw err;
+        return { data: JSON.parse(fallbackRaw), source: 'inline-json', title: '', subtitle: '' };
+      }
+    }
+
+    function normalizeItems(items){
+      return (items || []).map((it, i) => {
+        // Build tabs array - prefer new tabs format, fall back to legacy pageContentHtml + moreUrl
+        let tabs = it.tabs;
+        if (!tabs || !Array.isArray(tabs) || tabs.length === 0) {
+          // Legacy format: create tabs from pageContentHtml and moreUrl
+          tabs = [{
+            label: it.title ?? 'Content',
+            type: 'markdown',
+            content: '',
+            html: it.pageContentHtml ?? it.pageContent ?? ''
+          }];
+          const moreUrl = it.moreUrl ?? it.moreURL ?? it.more ?? '';
+          if (moreUrl) {
+            tabs.push({
+              label: 'More',
+              type: 'iframe',
+              url: moreUrl
+            });
+          }
+        }
+
+        return {
+          id: it.id ?? String(i),
+          title: it.title ?? `Untitled ${i+1}`,
+          subtitle: it.subtitle ?? '',
+          tabs: tabs,
+          type: it.type ?? '',
+          order: it.order ?? (i + 1)
+        };
+      });
+    }
+
+    // ---- Minimal tests (console.assert) ----
+    function runTests(){
+      const eq = (a,b) => JSON.stringify(a) === JSON.stringify(b);
+
+      console.assert(eq(gridSpec(1), [1,1]), 'gridSpec(1)');
+      console.assert(eq(gridSpec(2), [2,1]), 'gridSpec(2)');
+      console.assert(eq(gridSpec(3), [2,2]), 'gridSpec(3)');
+      console.assert(eq(gridSpec(4), [2,2]), 'gridSpec(4)');
+      console.assert(eq(gridSpec(5), [3,2]), 'gridSpec(5)');
+      console.assert(eq(gridSpec(6), [3,2]), 'gridSpec(6)');
+      console.assert(eq(gridSpec(7), [4,2]), 'gridSpec(7)');
+      console.assert(eq(gridSpec(8), [4,2]), 'gridSpec(8)');
+      console.assert(eq(gridSpec(9), [3,3]), 'gridSpec(9)');
+      console.assert(eq(gridSpec(10), [4,3]), 'gridSpec(10)');
+      console.assert(eq(gridSpec(12), [4,3]), 'gridSpec(12)');
+      console.assert(eq(gridSpec(13), [4,4]), 'gridSpec(13)');
+      console.assert(eq(gridSpec(16), [4,4]), 'gridSpec(16)');
+
+      console.assert(sanitizeMoreUrl('') === null, 'sanitize empty');
+      console.assert(sanitizeMoreUrl('javascript:alert(1)') === null, 'sanitize javascript');
+      console.assert(sanitizeMoreUrl('data:text/html,hi') === null, 'sanitize data');
+      console.assert(typeof sanitizeMoreUrl('https://example.com') === 'string', 'sanitize https ok');
+
+      let clicks = 0;
+      const b = el('button', { onClick: () => { clicks++; } }, []);
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      console.assert(clicks === 1, 'el() binds onClick');
+
+      console.assert(coerceModuleName('hcd2169') === 'hcd2169', 'moduleName no extension');
+      console.assert(coerceModuleName('hcd2169.js') === 'hcd2169', 'moduleName strips .js');
+      console.assert(coerceModuleName('../secrets') === 'sample', 'moduleName blocks ..');
+      console.assert(coerceModuleName('https://evil.com/x') === 'sample', 'moduleName blocks protocol');
+
+      console.debug('[CardApp] tests complete');
+    }
+
+    runTests();
+
+    // -------- Course Menu --------
+    async function loadCourseManifest() {
+      const response = await fetch('./courses.json');
+      if (!response.ok) throw new Error('Could not load courses.json');
+      return response.json();
+    }
+
+    function renderCourseMenu(courses) {
+      headerEl.hidden = true;
+      dataPill.textContent = 'Select a course';
+      countPill.textContent = `${courses.length} available`;
+      document.getElementById('keysHint').hidden = true;
+
+      const menu = el('div', { class: 'course-menu' }, [
+        el('h1', {}, [document.createTextNode('Course Cards')]),
+        el('p', {}, [document.createTextNode('Select a course to view:')]),
+        el('div', { class: 'course-menu-list' },
+          courses.map(course =>
+            el('a', {
+              class: 'course-menu-item',
+              href: `?file=${encodeURIComponent(course.file)}`
+            }, [
+              el('div', { class: 'course-menu-item-title' }, [document.createTextNode(course.title)]),
+              course.subtitle
+                ? el('div', { class: 'course-menu-item-subtitle' }, [document.createTextNode(course.subtitle)])
+                : null
+            ].filter(Boolean))
+          )
+        )
+      ]);
+
+      app.innerHTML = '';
+      app.appendChild(menu);
+    }
+
+    // Init
+    const params = new URLSearchParams(window.location.search);
+    const fileParam = params.get('file');
+
+    if (fileParam) {
+      // Show back link when viewing a course
+      document.getElementById('backLink').hidden = false;
+
+      // Load specific course
+      loadCardsData().then(({ data, source, title, subtitle }) => {
+        state.items = normalizeItems(data);
+        setCollectionMeta(title, subtitle);
+        setPills(source);
+        render();
+      }).catch(err => {
+        console.error(err);
+        markWarning('error loading data');
+        state.items = normalizeItems([]);
+        setPills('none');
+        app.innerHTML = `<div class="pill warn" style="margin:20px auto; max-width: 900px;">Could not load cards data. Check console for details. (Tip: serve via a local server for ES module imports.)</div>`;
+      });
+    } else {
+      // Show course selection menu
+      loadCourseManifest().then(manifest => {
+        if (manifest.courses && manifest.courses.length > 0) {
+          renderCourseMenu(manifest.courses);
+        } else {
+          app.innerHTML = `<div class="pill warn" style="margin:20px auto;">No courses found. Run the build script to generate courses.json.</div>`;
+        }
+      }).catch(err => {
+        console.error(err);
+        app.innerHTML = `<div class="pill warn" style="margin:20px auto;">Could not load course list. Make sure courses.json exists (run build script).</div>`;
+      });
+    }
+  </script>
+</body>
+</html>

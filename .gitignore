@@ -1,0 +1,17 @@
+# Build tooling
+build/node_modules/
+
+# Source files (compiled into *-built.js)
+courses/
+
+# Docs
+docs/
+
+# Unused source JS
+hmia.js
+hcd_inf2169.js
+sample.js
+ct.txt
+
+# macOS
+.DS_Store

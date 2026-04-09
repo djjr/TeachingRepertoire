@@ -1,0 +1,29 @@
+{
+  "courses": [
+    {
+      "file": "ants-brains-cities-software-built",
+      "title": "Ants, Brains, Cities, and Software",
+      "subtitle": "A Course by Dan Ryan"
+    },
+    {
+      "file": "ct-built",
+      "title": "Computational Reasoning",
+      "subtitle": "A Course by Dan Ryan"
+    },
+    {
+      "file": "design-thinking-for-higher-education-built",
+      "title": "Design Thinking for Higher Education",
+      "subtitle": "A Course by Dan Ryan"
+    },
+    {
+      "file": "hmia-built",
+      "title": "Human and Machine Intelligence Alignment",
+      "subtitle": "Course by Dan Ryan"
+    },
+    {
+      "file": "hcd-built",
+      "title": "Human Centred Design",
+      "subtitle": "A Course by Dan Ryan"
+    }
+  ]
+}
