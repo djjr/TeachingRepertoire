@@ -1,0 +1,17 @@
+{
+  "name": "course-builder",
+  "version": "1.0.0",
+  "description": "Build course card data from Obsidian markdown files",
+  "scripts": {
+    "build": "node build.js",
+    "build:watch": "node build.js --watch",
+    "images": "node process-images.js"
+  },
+  "dependencies": {
+    "exif-parser": "^0.1.12",
+    "gray-matter": "^4.0.3",
+    "js-yaml": "^4.1.0",
+    "marked": "^12.0.0",
+    "sharp": "^0.33.2"
+  }
+}
